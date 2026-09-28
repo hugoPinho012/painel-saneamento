@@ -85,13 +85,13 @@ def _padronizar_colunas(df: pd.DataFrame, nomes_esperados: list, nome_arquivo: s
     return df, faltando
 
 
-@st.cache_data(show_spinner="Carregando bases de dados...")
+@st.cache_resource(show_spinner="Carregando bases de dados...")
 def carregar_dados():
-    df_snisa_agua = pd.read_csv(f"{DATA_DIR}/SNISA_tratado_agua_{DATA_SUFFIX}.csv")
-    df_snisa_esgoto = pd.read_csv(f"{DATA_DIR}/SNISA_tratado_esgoto_{DATA_SUFFIX}.csv")
-    df_snis = pd.read_csv(f"{DATA_DIR}/snis_completo_{DATA_SUFFIX}.csv")
-    df_relacao_esgoto = pd.read_csv(f"{DATA_DIR}/relacao_esgoto_{DATA_SUFFIX}.csv")
-    df_relacao_agua = pd.read_csv(f"{DATA_DIR}/relacao_agua_{DATA_SUFFIX}.csv")
+    df_snisa_agua = pd.read_csv(f"{DATA_DIR}/SNISA_tratado_agua_{DATA_SUFFIX}.csv", low_memory=False)
+    df_snisa_esgoto = pd.read_csv(f"{DATA_DIR}/SNISA_tratado_esgoto_{DATA_SUFFIX}.csv", low_memory=False)
+    df_snis = pd.read_parquet(f"{DATA_DIR}/snis_completo_20260928.parquet")    
+    df_relacao_esgoto = pd.read_csv(f"{DATA_DIR}/relacao_esgoto.csv", low_memory=False)
+    df_relacao_agua = pd.read_csv(f"{DATA_DIR}/relacao_agua.csv", low_memory=False)
 
     avisos = []
 
@@ -131,7 +131,8 @@ def carregar_dados():
 
 
 @st.cache_data(show_spinner=False)
-def criar_df_consulta(df_snis, df_snisa_agua, df_snisa_esgoto):
+def criar_df_consulta(_df_snis, _df_snisa_agua, _df_snisa_esgoto):
+    df_snis, df_snisa_agua, df_snisa_esgoto = _df_snis, _df_snisa_agua, _df_snisa_esgoto
     df_snis_consulta = df_snis[["Município", "Estado", "Sigla do Prestador"]].copy()
     df_snisa_agua_consulta = df_snisa_agua[["Município", "UF", "CAD0006"]].copy()
     df_snisa_esgoto_consulta = df_snisa_esgoto[["Município", "UF", "CAD0006"]].copy()
@@ -158,13 +159,15 @@ def criar_df_consulta(df_snis, df_snisa_agua, df_snisa_esgoto):
 
 
 @st.cache_data(show_spinner=False)
-def obter_estados(df_consulta):
+def obter_estados(_df_consulta):
+    df_consulta = _df_consulta
     estados = sorted(e for e in df_consulta["Estado"].dropna().unique() if e in UFS_VALIDAS)
     return estados
 
 
 @st.cache_data(show_spinner="Carregando municípios do estado...")
-def obter_municipios(df_snis, df_snisa_agua, df_snisa_esgoto, estado):
+def obter_municipios(_df_snis, _df_snisa_agua, _df_snisa_esgoto, estado):
+    df_snis, df_snisa_agua, df_snisa_esgoto = _df_snis, _df_snisa_agua, _df_snisa_esgoto
     municipios_snis = df_snis[["Município", "Estado"]].drop_duplicates()
 
     municipios_snis_agua = df_snisa_agua[["Município", "UF"]].drop_duplicates().copy()
@@ -187,7 +190,8 @@ def obter_municipios(df_snis, df_snisa_agua, df_snisa_esgoto, estado):
 
 
 @st.cache_data(show_spinner="Carregando prestadores do município...")
-def obter_prestadores(df_consulta, estado, municipio):
+def obter_prestadores(_df_consulta, estado, municipio):
+    df_consulta = _df_consulta
     df_consulta_filtrado = df_consulta.query("Estado == @estado & `Município` == @municipio")
     lista_prestadores = sorted(
         df_consulta_filtrado["Sigla do Prestador"].dropna().unique().tolist()
@@ -196,9 +200,11 @@ def obter_prestadores(df_consulta, estado, municipio):
 
 
 @st.cache_data(show_spinner="Carregando indicadores disponíveis...")
-def obter_indicadores(df_snis, df_snisa_agua, df_snisa_esgoto,
-                       df_relacao_agua, df_relacao_esgoto,
+def obter_indicadores(_df_snis, _df_snisa_agua, _df_snisa_esgoto,
+                       _df_relacao_agua, _df_relacao_esgoto,
                        estado, cidade, prestador):
+    df_snis, df_snisa_agua, df_snisa_esgoto = _df_snis, _df_snisa_agua, _df_snisa_esgoto
+    df_relacao_agua, df_relacao_esgoto = _df_relacao_agua, _df_relacao_esgoto
 
     def obter_indicadores_snisa(df_snisa, eh_agua, estado, cidade, prestador):
         df_snisa_temp = df_snisa.query(
@@ -621,7 +627,7 @@ with st.sidebar:
     )
 
     obter_dados_clicado = st.button(
-        "Obter dados", type="primary", use_container_width=True,
+        "Obter dados", type="primary", width="stretch",
         disabled=not indicador_sel,
     )
 
@@ -682,14 +688,14 @@ if "df_resultado" in st.session_state:
             df_resultado, x="Ano", y=indicador_atual, markers=True,
         )
         fig.update_layout(height=550, xaxis_title="Ano", yaxis_title=indicador_atual)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, width="stretch")
 
         st.subheader("Dados detalhados")
         colunas_tabela = ["Município", "Estado", "Ano", indicador_atual]
         colunas_tabela = [c for c in colunas_tabela if c in df_resultado.columns]
         st.dataframe(
             df_resultado[colunas_tabela].sort_values(by="Ano", ascending=False),
-            use_container_width=True, hide_index=True,
+            width="stretch", hide_index=True,
         )
 else:
     st.info("Selecione Estado, Município, Prestador e Indicador na barra lateral e clique em **Obter dados**.")
