@@ -90,8 +90,8 @@ def carregar_dados():
     df_snisa_agua = pd.read_csv(f"{DATA_DIR}/SNISA_tratado_agua_{DATA_SUFFIX}.csv", low_memory=False)
     df_snisa_esgoto = pd.read_csv(f"{DATA_DIR}/SNISA_tratado_esgoto_{DATA_SUFFIX}.csv", low_memory=False)
     df_snis = pd.read_parquet(f"{DATA_DIR}/snis_completo_20260928.parquet")    
-    df_relacao_esgoto = pd.read_csv(f"{DATA_DIR}/relacao_esgoto.csv", low_memory=False)
-    df_relacao_agua = pd.read_csv(f"{DATA_DIR}/relacao_agua.csv", low_memory=False)
+    df_relacao_esgoto = pd.read_csv(f"{DATA_DIR}/relacao_esgoto_{DATA_SUFFIX}.csv", low_memory=False)
+    df_relacao_agua = pd.read_csv(f"{DATA_DIR}/relacao_agua_{DATA_SUFFIX}.csv", low_memory=False)
 
     avisos = []
 
