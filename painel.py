@@ -1,36 +1,3 @@
-"""
-Painel de indicadores de saneamento (SNIS + SNISA)
-====================================================
-
-Este app corrige os seguintes problemas encontrados no script original:
-
-1. SyntaxError: `municipios.drop_duplicates()zzzzz` -> `municipios.drop_duplicates()`.
-2. Bug de lógica em `consulta_snis`, `consulta_snisa` e `uniao_registros`: essas
-   funções usavam as variáveis globais fixas `indicador_snis` / `indicador_snisa`
-   (definidas uma única vez no topo do script original) em vez do parâmetro
-   `indicador` recebido pela própria função. Isso fazia com que, não importa
-   qual indicador o usuário pedisse, o "indicador equivalente" calculado fosse
-   sempre o mesmo (IN055 / IAG0001). Neste app, todo o cálculo de equivalência
-   usa o parâmetro `indicador` da chamada atual.
-3. Inconsistência em `obter_municipios`: para esgoto o código usava
-   `df_snisa_esgoto["UF"]` (o dataframe inteiro) em vez da coluna local já
-   filtrada/renomeada `municipios_snis_esgoto["UF"]`. Corrigido para manter o
-   mesmo padrão usado em água.
-4. Dependência de variáveis globais não declaradas dentro das funções
-   (`df_consulta`, `indicadores_snis`, `indicadores_snisa`). Neste app elas são
-   sempre passadas como parâmetro/calculadas via `st.cache_data`, então não há
-   risco de `NameError` por esquecer de rodar uma célula antes de outra.
-
-Como rodar:
-    streamlit run painel_saneamento.py
-
-Requisitos:
-    pip install streamlit pandas plotly
-
-Os arquivos CSV são esperados na pasta "Data_v2", com os mesmos nomes usados
-no script original. Ajuste a constante DATA_DIR abaixo se necessário.
-"""
-
 import re
 import unicodedata
 
@@ -38,7 +5,6 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# ---------------------------------------------------------------------------
 # Configuração geral
 # ---------------------------------------------------------------------------
 
@@ -54,7 +20,6 @@ UFS_VALIDAS = {
 st.set_page_config(page_title="Painel de Saneamento (SNIS/SNISA)", layout="wide")
 
 
-# ---------------------------------------------------------------------------
 # Carregamento de dados (cacheado)
 # ---------------------------------------------------------------------------
 
@@ -261,8 +226,7 @@ def obter_indicadores(_df_snis, _df_snisa_agua, _df_snisa_esgoto,
     return indicadores_snis, indicadores_snisa
 
 
-# ---------------------------------------------------------------------------
-# Consultas (bugs de "indicador" corrigidos: sempre usa o parâmetro recebido)
+# Consultas 
 # ---------------------------------------------------------------------------
 
 def consulta_snis(df_snis, df_relacao_agua, df_relacao_esgoto,
@@ -499,7 +463,6 @@ def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df
         return df_final, None
 
 
-# ---------------------------------------------------------------------------
 # Interface Streamlit
 # ---------------------------------------------------------------------------
 
@@ -556,7 +519,7 @@ def obter_metadados_indicador(indicador, indicadores_snis, indicadores_snisa,
     }
 
 
-st.title("📊 Painel de Indicadores de Saneamento (SNIS + SNISA)")
+st.title("Painel de Indicadores de Saneamento (SNIS + SNISA)")
 
 try:
     (df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua,
@@ -570,7 +533,7 @@ except FileNotFoundError as e:
     st.stop()
 
 if avisos_colunas:
-    with st.expander("⚠️ Colunas não encontradas nos arquivos de origem", expanded=True):
+    with st.expander("Colunas não encontradas nos arquivos de origem", expanded=True):
         for faltando, colunas_disponiveis, nome_arquivo in avisos_colunas:
             st.warning(
                 f"Em **{nome_arquivo}** não encontrei: {faltando}.\n\n"
@@ -652,7 +615,7 @@ if "df_resultado" in st.session_state:
     aviso_uniao = st.session_state.get("aviso_uniao")
 
     if aviso_uniao:
-        st.warning(f"⚠️ {aviso_uniao}")
+        st.warning(f"{aviso_uniao}")
 
     if df_resultado is None or df_resultado.empty:
         st.warning("Nenhum dado encontrado para essa combinação de filtros.")
