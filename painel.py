@@ -5,7 +5,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-# Configuração geral
+# General configuration
 # ---------------------------------------------------------------------------
 
 DATA_DIR = "Data_v2"
@@ -20,11 +20,11 @@ UFS_VALIDAS = {
 st.set_page_config(page_title="Painel de Saneamento (SNIS/SNISA)", layout="wide")
 
 
-# Carregamento de dados (cacheado)
+# Data loading (cached)
 # ---------------------------------------------------------------------------
 
 def _normalizar_nome(texto: str) -> str:
-    """Remove acentos, espaços, underscores e caixa para comparar nomes de coluna."""
+    """Strips accents, spaces, underscores and casing so column names can be compared."""
     texto = str(texto).strip().lower()
     texto = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
     texto = re.sub(r"[^a-z0-9]+", "", texto)
@@ -32,8 +32,8 @@ def _normalizar_nome(texto: str) -> str:
 
 
 def _padronizar_colunas(df: pd.DataFrame, nomes_esperados: list, nome_arquivo: str):
-    """Renomeia colunas do df para os nomes esperados, tolerando diferenças de
-    acento/caixa/espaço/underscore no cabeçalho original. Retorna (df, faltando)."""
+    """Renames the df's columns to the expected names, tolerating differences in
+    accent/case/space/underscore in the original header. Returns (df, missing)."""
     mapa_normalizado = {_normalizar_nome(c): c for c in df.columns}
     renomear = {}
     faltando = []
@@ -139,14 +139,14 @@ def obter_municipios(_df_snis, _df_snisa_agua, _df_snisa_esgoto, estado):
     municipios_snis_esgoto = df_snisa_esgoto[["Município", "UF"]].drop_duplicates().copy()
 
     municipios_snis_agua["Estado"] = municipios_snis_agua["UF"]
-    # Correção: usar a coluna local já filtrada, e não o dataframe inteiro de esgoto.
     municipios_snis_esgoto["Estado"] = municipios_snis_esgoto["UF"]
 
     municipios_snis_agua = municipios_snis_agua.drop(columns=["UF"])
     municipios_snis_esgoto = municipios_snis_esgoto.drop(columns=["UF"])
 
+    # Combines municipalities present in any of the three source tables, since
+    # not every municipality appears in all of them.
     municipios = pd.concat([municipios_snis, municipios_snis_agua, municipios_snis_esgoto])
-    # Correção: removido o "zzzzz" que causava SyntaxError.
     municipios = municipios.drop_duplicates()
 
     municipios_do_uf = municipios[municipios["Estado"] == estado]["Município"]
@@ -195,6 +195,8 @@ def obter_indicadores(_df_snis, _df_snisa_agua, _df_snisa_esgoto,
                 view_code = df_relacao.query("`CÓDIGO` == @indicador")["View Codigo"].values[0]
                 view_codes.append(view_code)
             except IndexError:
+                # SNISA column with no matching entry in the relation table —
+                # indicator skipped because it has no mapped View Codigo.
                 continue
         return view_codes
 
@@ -226,7 +228,7 @@ def obter_indicadores(_df_snis, _df_snisa_agua, _df_snisa_esgoto,
     return indicadores_snis, indicadores_snisa
 
 
-# Consultas 
+# Queries
 # ---------------------------------------------------------------------------
 
 def consulta_snis(df_snis, df_relacao_agua, df_relacao_esgoto,
@@ -238,10 +240,12 @@ def consulta_snis(df_snis, df_relacao_agua, df_relacao_esgoto,
             "Estado == @estado & `Município` == @cidade & `Sigla do Prestador` == @prestador"
         )
         try:
+            # Column name used in the more recent SNIS editions.
             df_snis_temp = df_snis_temp[
                 ["Estado", "Município", "Sigla do Prestador", "Ano de Referência", indicador]
             ]
         except KeyError:
+            # Older editions only have "Ano" instead of "Ano de Referência".
             df_snis_temp = df_snis_temp[
                 ["Estado", "Município", "Sigla do Prestador", "Ano", indicador]
             ]
@@ -249,10 +253,12 @@ def consulta_snis(df_snis, df_relacao_agua, df_relacao_esgoto,
 
     if indicador in indicadores_snisa:
         try:
+            # Try the water relation table first...
             indicador_equivalente = df_relacao_agua[
                 df_relacao_agua["View Codigo"] == indicador
             ]["INDICADOR EQUIVALENTE"].values[0]
         except IndexError:
+            # ...and fall back to the sewage one if not found in water.
             indicador_equivalente = df_relacao_esgoto[
                 df_relacao_esgoto["View Codigo"] == indicador
             ]["INDICADOR EQUIVALENTE"].values[0]
@@ -269,11 +275,13 @@ def consulta_snis(df_snis, df_relacao_agua, df_relacao_esgoto,
             "Estado == @estado & `Município` == @cidade & `Sigla do Prestador` == @prestador"
         )
         try:
+            # Column name used in the more recent SNIS editions.
             df_snis_temp = df_snis_temp[
                 ["Estado", "Município", "Sigla do Prestador", "Ano de Referência",
                  indicador_equivalente_full_name]
             ]
         except KeyError:
+            # Older editions only have "Ano" instead of "Ano de Referência".
             df_snis_temp = df_snis_temp[
                 ["Estado", "Município", "Sigla do Prestador", "Ano",
                  indicador_equivalente_full_name]
@@ -304,7 +312,6 @@ def consulta_snisa(df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df_relacao_e
             return pd.DataFrame()
 
     if indicador in indicadores_snis:
-        # Correção: usar o indicador recebido como parâmetro, não a constante global.
         codigo_indicador_snis = indicador.split(" - ")[0]
 
         serie_agua = df_relacao_agua.loc[
@@ -323,8 +330,8 @@ def consulta_snisa(df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df_relacao_e
                     )
                     return df_snisa_temp[["UF", "Município", "CAD0006", "Ano", codigo_equivalente]]
 
-        # Não existe (ou não está mais disponível) equivalente no SNISA para
-        # este indicador do SNIS. Retorna vazio em vez de estourar IndexError.
+        # No SNISA equivalent exists (or is no longer available) for this
+        # SNIS indicator. Returns empty instead of raising IndexError.
         return pd.DataFrame()
 
     return pd.DataFrame()
@@ -333,11 +340,11 @@ def consulta_snisa(df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df_relacao_e
 def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df_relacao_esgoto,
                      indicadores_snis, indicadores_snisa,
                      estado, cidade, prestador, indicador):
-    """Retorna (df_final, aviso).
+    """Returns (df_final, warning).
 
-    `aviso` é None quando SNIS e SNISA foram unidos normalmente, ou uma
-    mensagem explicando por que apenas uma das duas bases está disponível
-    para este indicador (ex.: indicador do SNIS sem equivalente no SNISA)."""
+    `warning` is None when SNIS and SNISA were merged normally, or a message
+    explaining why only one of the two sources is available for this
+    indicator (e.g. a SNIS indicator with no SNISA equivalent)."""
 
     df_snisa_res = consulta_snisa(
         df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df_relacao_esgoto,
@@ -349,7 +356,7 @@ def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df
     )
 
     if df_snisa_res.empty or df_snis_res.empty:
-        # Sem par equivalente em uma das duas bases: devolve o que existir.
+        # No matching pair in one of the two sources: return whichever exists.
         if not df_snis_res.empty and df_snisa_res.empty:
             resultado = df_snis_res
             aviso = "Indicador descontinuado no SNISA. Dados disponíveis até 2022 (apenas SNIS)."
@@ -368,8 +375,8 @@ def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df
                              if c not in ("Estado", "Município", "Sigla do Prestador", "Ano")]
             if col_indicador:
                 resultado = resultado.rename(columns={col_indicador[0]: indicador})
-                # Garante que o valor vira numérico mesmo vindo só do SNIS
-                # (que usa vírgula decimal) ou só do SNISA.
+                # Ensures the value becomes numeric whether it came only from
+                # SNIS (which uses a decimal comma) or only from SNISA.
                 resultado[indicador] = (
                     resultado[indicador].astype(str).str.replace(",", ".", regex=False)
                 )
@@ -381,7 +388,6 @@ def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df
     df_snis_res = df_snis_res.rename(columns={"Ano de Referência": "Ano"})
 
     if indicador in indicadores_snis:
-        # Correção: usar o parâmetro `indicador`, não a constante global `indicador_snis`.
         codigo_indicador_snis = indicador.split(" - ")[0]
 
         serie_agua = df_relacao_agua.loc[
@@ -396,8 +402,8 @@ def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df
         elif not serie_esgoto.empty:
             indicador_snisa_equivalente = serie_esgoto.values[0]
         else:
-            # Segurança extra: não deveria chegar aqui, já que df_snisa_res não
-            # estava vazio, mas evita IndexError em qualquer cenário inesperado.
+            # Extra safety net: shouldn't be reached since df_snisa_res wasn't
+            # empty, but avoids an IndexError in any unexpected scenario.
             return df_snis_res, "Indicador descontinuado no SNISA. Dados disponíveis até 2022 (apenas SNIS)."
 
         df_snisa_res = df_snisa_res.rename(columns={indicador_snisa_equivalente: indicador})
@@ -455,21 +461,21 @@ def uniao_registros(df_snis, df_snisa_agua, df_snisa_esgoto, df_relacao_agua, df
         df_snis_res = df_snis_res.rename(columns={indicador_snis_equivalente: codigo_snisa})
 
         df_final = pd.concat([df_snis_res, df_snisa_res])
-        # Correção: padroniza o nome da coluna do indicador para o rótulo
-        # completo escolhido pelo usuário (antes ficava com o código curto do
-        # SNISA, o que não batia com o nome usado na interface).
+        # Standardizes the indicator column name to the full label chosen by
+        # the user, since the column arrived with the short SNISA code, which
+        # doesn't match the name used in the interface.
         df_final = df_final.rename(columns={codigo_snisa: indicador})
         df_final = df_final.sort_values(by="Ano", ascending=True)
         return df_final, None
 
 
-# Interface Streamlit
+# Streamlit interface
 # ---------------------------------------------------------------------------
 
 def _buscar_valor_normalizado(linha: pd.Series, candidatos: list):
-    """Procura, numa linha (Series), o primeiro valor não vazio cujo nome de
-    coluna normalizado bata com algum dos candidatos (tolerante a acento,
-    caixa, espaço e underscore)."""
+    """Looks through a row (Series) for the first non-empty value whose
+    normalized column name matches one of the candidates (tolerant to
+    accent, case, space and underscore)."""
     normalizados = {_normalizar_nome(col): col for col in linha.index}
     for candidato in candidatos:
         chave = _normalizar_nome(candidato)
@@ -482,8 +488,8 @@ def _buscar_valor_normalizado(linha: pd.Series, candidatos: list):
 
 def obter_metadados_indicador(indicador, indicadores_snis, indicadores_snisa,
                                df_relacao_agua, df_relacao_esgoto):
-    """Busca metadados (grupo, palavra-chave, unidade, informação) do
-    indicador nas tabelas de relação água/esgoto."""
+    """Looks up metadata (group, keyword, unit, info) for the indicator
+    in the water/sewage relation tables."""
     linha = None
 
     if indicador in indicadores_snisa:
