@@ -39,8 +39,8 @@ O SNIS é a base histórica consolidada do setor, mas com a migração para o SN
 **1. Clone o repositório e instale as dependências:**
 
 ```bash
-git clone <url-do-repositorio>
-cd <pasta-do-repositorio>
+git clone https://github.com/hugoPinho012/painel-saneamento
+cd painel-saneamento
 pip install -r requirements.txt
 ```
 
