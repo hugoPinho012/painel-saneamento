@@ -488,41 +488,68 @@ def _buscar_valor_normalizado(linha: pd.Series, candidatos: list):
 
 def obter_metadados_indicador(indicador, indicadores_snis, indicadores_sinisa,
                                df_relacao_agua, df_relacao_esgoto):
-    """Looks up metadata (group, keyword, unit, info) for the indicator
-    in the water/sewage relation tables."""
+    """Looks up metadata (group, keyword, unit, info) and the SNIS / SINISA
+    equivalents of the indicator in the water/sewage relation tables.
+
+    Always returns a dict. Fields that couldn't be found are None."""
     linha = None
+    equivalente_snis = None
+    equivalente_sinisa = None
 
     if indicador in indicadores_sinisa:
+        equivalente_sinisa = indicador
         for df_rel in (df_relacao_agua, df_relacao_esgoto):
             correspondencia = df_rel[df_rel["View Codigo"] == indicador]
             if not correspondencia.empty:
                 linha = correspondencia.iloc[0]
                 break
+
+        if linha is not None:
+            codigo_snis = _buscar_valor_normalizado(linha, ["INDICADOR EQUIVALENTE"])
+            if codigo_snis:
+                # Prefer the full label ("IN055 - ...") when it exists for
+                # this provider; otherwise show just the code.
+                equivalente_snis = next(
+                    (ind for ind in indicadores_snis if ind.split(" - ")[0].strip() == codigo_snis),
+                    codigo_snis,
+                )
+
     elif indicador in indicadores_snis:
-        codigo = indicador.split(" - ")[0]
+        equivalente_snis = indicador
+        codigo = indicador.split(" - ")[0].strip()
         for df_rel in (df_relacao_agua, df_relacao_esgoto):
             correspondencia = df_rel[df_rel["INDICADOR EQUIVALENTE"] == codigo]
             if not correspondencia.empty:
                 linha = correspondencia.iloc[0]
                 break
 
-    if linha is None:
-        return None
+        if linha is not None:
+            equivalente_sinisa = _buscar_valor_normalizado(linha, ["View Codigo"])
 
-    return {
-        "Grupo": _buscar_valor_normalizado(
-            linha, ["Grupo", "Categoria", "Tema", "Grupo Indicador", "Grupo do Indicador"]
-        ),
-        "Palavra-chave": _buscar_valor_normalizado(
-            linha, ["Palavra-chave", "Palavra Chave", "Palavras-chave", "Keyword", "Tag"]
-        ),
-        "Unidade": _buscar_valor_normalizado(
-            linha, ["Unidade", "Unidade de Medida", "Unit", "Und"]
-        ),
-        "Informação": _buscar_valor_normalizado(
-            linha, ["Informação", "Descrição", "Observação", "Info", "Detalhes", "Nota", "Comentário"]
-        ),
+    metadados = {
+        "Grupo": None,
+        "Palavra-chave": None,
+        "Unidade": None,
+        "Informação": None,
+        "Equivalente SNIS": equivalente_snis,
+        "Equivalente SINISA": equivalente_sinisa,
     }
+
+    if linha is not None:
+        metadados["Grupo"] = _buscar_valor_normalizado(
+            linha, ["Grupo", "Categoria", "Tema", "Grupo Indicador", "Grupo do Indicador"]
+        )
+        metadados["Palavra-chave"] = _buscar_valor_normalizado(
+            linha, ["Palavra-chave", "Palavra Chave", "Palavras-chave", "Keyword", "Tag"]
+        )
+        metadados["Unidade"] = _buscar_valor_normalizado(
+            linha, ["Unidade", "Unidade de Medida", "Unit", "Und"]
+        )
+        metadados["Informação"] = _buscar_valor_normalizado(
+            linha, ["Informação", "Descrição", "Observação", "Info", "Detalhes", "Nota", "Comentário"]
+        )
+
+    return metadados
 
 
 st.title("Painel de Indicadores de Saneamento (SNIS + SINISA)")
@@ -579,16 +606,30 @@ with st.sidebar:
         disabled=not municipio_sel,
     )
 
+    # The full (unfiltered) lists are kept in indicadores_snis / indicadores_sinisa,
+    # because uniao_registros and the metadata lookup need both of them.
     if estado_sel and municipio_sel and prestador_sel:
         with st.spinner("Filtrando indicadores disponíveis..."):
             indicadores_snis, indicadores_sinisa = obter_indicadores(
                 df_snis, df_sinisa_agua, df_sinisa_esgoto, df_relacao_agua, df_relacao_esgoto,
                 estado_sel, municipio_sel, prestador_sel,
             )
-        lista_indicadores = sorted(set(indicadores_snis) | set(indicadores_sinisa))
     else:
         indicadores_snis, indicadores_sinisa = [], []
-        lista_indicadores = []
+
+    # Source filter: clicking the selected pill again clears it and shows all indicators.
+    fonte_sel = st.pills(
+        "Fonte do indicador", ["SNIS", "SINISA"],
+        selection_mode="single", default=None,
+        disabled=not prestador_sel,
+    )
+
+    if fonte_sel == "SNIS":
+        lista_indicadores = sorted(set(indicadores_snis))
+    elif fonte_sel == "SINISA":
+        lista_indicadores = sorted(set(indicadores_sinisa))
+    else:
+        lista_indicadores = sorted(set(indicadores_snis) | set(indicadores_sinisa))
 
     indicador_sel = st.selectbox(
         "Indicador", lista_indicadores, index=None, placeholder="Selecione um indicador",
@@ -640,7 +681,9 @@ if "df_resultado" in st.session_state:
 
         with st.container(border=True):
             st.markdown("**ℹ️ Sobre o indicador**")
-            if metadados and any(metadados.values()):
+
+            campos_meta = ["Grupo", "Palavra-chave", "Unidade", "Informação"]
+            if any(metadados[c] for c in campos_meta):
                 col_grupo, col_palavra, col_unidade = st.columns(3)
                 col_grupo.markdown(f"**Grupo**  \n{metadados['Grupo'] or '—'}")
                 col_palavra.markdown(f"**Palavra-chave**  \n{metadados['Palavra-chave'] or '—'}")
@@ -652,6 +695,14 @@ if "df_resultado" in st.session_state:
                     "Metadados não encontrados para este indicador nas tabelas "
                     "`relacao_agua.csv` / `relacao_esgoto.csv`."
                 )
+
+            col_eq_snis, col_eq_sinisa = st.columns(2)
+            col_eq_snis.markdown(
+                f"**Equivalente no SNIS**  \n{metadados['Equivalente SNIS'] or 'Sem equivalente no SNIS'}"
+            )
+            col_eq_sinisa.markdown(
+                f"**Equivalente no SINISA**  \n{metadados['Equivalente SINISA'] or 'Sem equivalente no SINISA'}"
+            )
 
         fig = px.line(
             df_resultado, x="Ano", y=indicador_atual, markers=True,
